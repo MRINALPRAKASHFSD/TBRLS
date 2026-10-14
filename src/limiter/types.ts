@@ -36,3 +36,16 @@ export interface RateCheckResult {
   reset: number;
   retryAfter: number | null;
 }
+
+export class InvalidCostError extends Error {
+  constructor(
+    message: string,
+    public readonly limit: number,
+    public readonly cost: number,
+    public readonly policyType: PolicyType
+  ) {
+    super(message);
+    this.name = 'InvalidCostError';
+  }
+}
+
