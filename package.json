@@ -13,10 +13,16 @@
     "migrate": "tsx src/db/migrate.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "load-test": "k6 run load-tests/k6-rate-limit.js"
+    "load-test": "k6 run load-tests/k6-rate-limit.js",
+    "cleanup:sliding-window": "tsx src/scripts/cleanup.ts --sliding-window",
+    "cleanup:metrics": "tsx src/scripts/cleanup.ts --metrics",
+    "cleanup:all": "tsx src/scripts/cleanup.ts --all"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.52",
+    "@supabase/server": "^1.9.2",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.118.0",
     "dotenv": "^18.0.9",
     "fastify": "^5.12.7",
     "pg": "^8.23.1"
