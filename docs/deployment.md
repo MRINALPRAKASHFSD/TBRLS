@@ -44,12 +44,19 @@ npm ci --omit=dev
 # 2. Build TypeScript distribution
 npm run build
 
-# 3. Run database migrations
+# 3. Run database migrations (supports local, AWS RDS, Neon, or Supabase)
 DATABASE_URL="postgres://user:password@host:5432/dbname" npm run migrate
 
 # 4. Start production service
 NODE_ENV=production DATABASE_URL="postgres://user:password@host:5432/dbname" npm start
 ```
+
+### Managed Database / Supabase Deployment Notes
+- **Connection String**: When connecting to Supabase, use the direct connection string format:
+  `postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres`
+  *(Note: If your database password contains special characters, percent-encode them in the URL).*
+- **SSL**: Supabase enforces TLS/SSL. TBRLS automatically enables SSL (`{ rejectUnauthorized: false }`) when `DATABASE_URL` contains `supabase.co` or `sslmode=require`, or when `DATABASE_SSL=true`.
+- **Migrations**: Run `npm run migrate` once against the Supabase database before starting the service to create required rate limiting tables and atomic PL/pgSQL functions.
 
 ---
 
@@ -62,7 +69,9 @@ NODE_ENV=production DATABASE_URL="postgres://user:password@host:5432/dbname" npm
 | `NODE_ENV` | Runtime mode | `development` | Yes (`production`) |
 | `LOG_LEVEL` | Pino log level (`debug`, `info`, `warn`, `error`) | `info` | No |
 | `ADMIN_API_KEY` | Secret credential for admin endpoints | - | **Yes** |
+| `CHECK_API_KEY` | Secret credential for service-to-service check endpoint | - | **Yes** |
 | `DATABASE_URL` | PostgreSQL connection string | `postgres://localhost:5432/tbrls_dev` | **Yes** |
+| `DATABASE_SSL` | Explicitly enforce SSL for PostgreSQL connection | Auto-detected for `supabase.co` | No |
 | `DATABASE_POOL_MIN` | Minimum pool connections | `2` | No |
 | `DATABASE_POOL_MAX` | Maximum pool connections | `20` | No |
 | `DATABASE_CONNECTION_TIMEOUT_MS` | DB connect timeout in ms | `5000` | No |

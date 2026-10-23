@@ -9,7 +9,14 @@ const __dirname = path.dirname(__filename);
 
 export async function runMigrations(customDatabaseUrl?: string): Promise<string[]> {
   const dbUrl = customDatabaseUrl || config.databaseUrl;
-  const client = new pg.Client({ connectionString: dbUrl });
+  const isSsl = customDatabaseUrl
+    ? (customDatabaseUrl.includes('supabase.co') || customDatabaseUrl.includes('sslmode=require'))
+    : (config.databaseSsl || dbUrl.includes('supabase.co') || dbUrl.includes('sslmode=require'));
+
+  const client = new pg.Client({
+    connectionString: dbUrl,
+    ssl: isSsl ? { rejectUnauthorized: false } : undefined,
+  });
 
   await client.connect();
   const appliedMigrations: string[] = [];
