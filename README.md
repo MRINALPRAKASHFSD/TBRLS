@@ -11,7 +11,7 @@ A beginner-friendly, production-ready, distributed rate limiter service built wi
 - **Strict Concurrency Safety**: Row-level locking (`SELECT ... FOR UPDATE`) and atomic stored procedures prevent race conditions and double-spending across concurrent requests.
 - **IETF Standard Rate Limit Headers**: Emits `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, and `Retry-After` on check decisions.
 - **Fail-Closed Availability Posture**: Fails closed (HTTP 503) during database outages to protect downstream systems from cascading traffic overloads.
-- **Privacy & Security**: Zero client key or admin secret leakage in logs. Fastify/Pino log redaction and cryptographic SHA-256 trace identifiers.
+- **Privacy & Security**: Zero client key or admin secret leakage in logs. Fastify/Pino log redaction, route template logging (omitting client keys in path and query parameters), and cryptographic SHA-256 trace identifiers. Separate service-to-service credential (`CHECK_API_KEY`) and administrative credential (`ADMIN_API_KEY`). Refuses to start in production with placeholder secrets.
 - **High Performance**: Designed and benchmarked with k6 to sustain 500+ requests per second with sub-5ms latency.
 
 ---
@@ -19,16 +19,18 @@ A beginner-friendly, production-ready, distributed rate limiter service built wi
 ## Architecture Diagram
 
 ```
-[ Clients / Reverse Proxies ]
+[ Gateways / Upstream Services ]
              |
-             | HTTP POST /v1/check { "clientKey": "api-client-1", "cost": 1 }
+             | HTTP POST /v1/check (Header: X-Check-Key)
+             | Payload: { "clientKey": "api-client-1", "cost": 1 }
              v
 +-------------------------------------------------------+
 |                Fastify Rate Limiter Service           |
 |                                                       |
 |  - Schema Validation (TypeBox)                        |
 |  - Redaction Logger (Masked clientKey, no secrets)    |
-|  - Admin Auth Hook (Constant-time API Key check)      |
+|  - Check Auth Hook (Constant-time CHECK_API_KEY)      |
+|  - Admin Auth Hook (Constant-time ADMIN_API_KEY)      |
 +---------------------------+---------------------------+
                             |
                             | Parameterized SQL ($1, $2)
@@ -82,9 +84,12 @@ npm run dev
 
 ### 1. Perform a Rate Check (`POST /v1/check`)
 
+Evaluates request admission control. Requires the `CHECK_API_KEY` credential in the request header. Note that `clientKey` identifies the quota subject (e.g. user ID, IP address, tenant) and must come from an authenticated upstream caller.
+
 ```bash
 curl -X POST http://localhost:3000/v1/check \
   -H "Content-Type: application/json" \
+  -H "X-Check-Key: tbrls-check-dev-secret-key-change-me" \
   -d '{"clientKey": "client-user-123", "cost": 1}'
 ```
 
@@ -142,9 +147,46 @@ curl -X PUT http://localhost:3000/v1/admin/policies/client-user-123 \
   -H "X-Admin-Key: tbrls-admin-dev-secret-key-change-me" \
   -d '{
     "policyType": "SLIDING_WINDOW",
-    "limit": 100,
+    "windowLimit": 100,
     "windowDurationSeconds": 60
   }'
+```
+
+---
+
+### 3. Live Admin Dashboard & Metrics API
+
+TBRLS provides a real-time single-page operations dashboard and paginated telemetry metrics endpoints.
+
+- **Web Dashboard**: Navigate to `http://localhost:3000/admin/dashboard` (or `/admin`).
+  - Enter your `ADMIN_API_KEY`. The credential is kept **strictly in volatile JavaScript memory** and is never persisted in `localStorage`, `sessionStorage`, cookies, or the URL.
+  - Displays real-time request counts, admission/denial counts, denial percentage, and paginated per-client activity tables.
+- **Metrics Summary API**:
+  ```bash
+  curl -X GET "http://localhost:3000/v1/admin/metrics/summary" \
+    -H "X-Admin-Key: tbrls-admin-dev-secret-key-change-me"
+  ```
+- **Paginated Metrics API**:
+  ```bash
+  curl -X GET "http://localhost:3000/v1/admin/metrics?page=1&limit=20" \
+    -H "X-Admin-Key: tbrls-admin-dev-secret-key-change-me"
+  ```
+
+---
+
+### 4. Database Maintenance & Pruning
+
+Sliding-window timestamp logs and historical telemetry metrics can be cleaned up in bounded, safe batches:
+
+```bash
+# Clean up expired sliding-window logs across all active and inactive clients
+npm run cleanup:sliding-window
+
+# Clean up metric buckets older than 24 hours
+npm run cleanup:metrics
+
+# Run full storage maintenance
+npm run cleanup:all
 ```
 
 ---
@@ -152,12 +194,23 @@ curl -X PUT http://localhost:3000/v1/admin/policies/client-user-123 \
 ## Testing & Load Testing
 
 ```bash
-# Run unit and integration tests (concurrency, persistence, boundary math)
+# Run unit and integration tests (concurrency, persistence, boundary math, dual-instance pools, log sanitization)
 npm test
 
 # Run k6 load test (500+ RPS sustained)
-npm run load-test
+CHECK_API_KEY=tbrls-check-dev-secret-key-change-me npm run load-test
 ```
+
+### Verified Load Test Results (October 2026)
+- **Target Rate**: 550.00 iterations/sec for 20s
+- **Actual Measured Throughput**: **549.96 requests/sec** (11,000 requests executed)
+- **HTTP Failure Rate**: **0.00%** (0 failed out of 11,000)
+- **Checks Passed**: **100.00%** (66,000 out of 66,000 assertion checks)
+- **Latency Distribution**:
+  - `p(90)`: 877 µs
+  - `p(95)`: **1.15 ms** (Threshold: <30ms)
+  - `p(99)`: **11.68 ms** (Threshold: <60ms)
+  - `average`: 921.9 µs
 
 ---
 
@@ -179,4 +232,5 @@ npm run load-test
 ## License
 
 [MIT License](LICENSE) - Copyright (c) 2026 MRINALPRAKASH
+
 
