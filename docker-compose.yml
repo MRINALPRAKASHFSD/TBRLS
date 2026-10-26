@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tbrls-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: tbrls_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tbrls_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rate-limiter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tbrls-service
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      LOG_LEVEL: info
+      ADMIN_API_KEY: tbrls-admin-dev-secret-key-change-me
+      DATABASE_URL: postgres://postgres:postgrespassword@postgres:5432/tbrls_db
+      DATABASE_POOL_MIN: 2
+      DATABASE_POOL_MAX: 20
+      DATABASE_CONNECTION_TIMEOUT_MS: 5000
+      DEFAULT_POLICY_TYPE: TOKEN_BUCKET
+      DEFAULT_BUCKET_CAPACITY: 10
+      DEFAULT_BUCKET_REFILL_RATE: 2.0
+      DEFAULT_WINDOW_LIMIT: 60
+      DEFAULT_WINDOW_DURATION_SECONDS: 60
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
