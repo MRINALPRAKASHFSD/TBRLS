@@ -14,7 +14,7 @@ describe('Concurrency & Double-Spending Prevention (Integration Tests)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    if (app) await app.close();
     await closeTestPool();
   });
 
@@ -46,6 +46,7 @@ describe('Concurrency & Double-Spending Prevention (Integration Tests)', () => {
       app.inject({
         method: 'POST',
         url: '/v1/check',
+        headers: { 'X-Check-Key': config.checkApiKey },
         payload: { clientKey, cost: 1 },
       })
     );
@@ -87,6 +88,7 @@ describe('Concurrency & Double-Spending Prevention (Integration Tests)', () => {
       app.inject({
         method: 'POST',
         url: '/v1/check',
+        headers: { 'X-Check-Key': config.checkApiKey },
         payload: { clientKey: firstTimeKey, cost: 1 },
       })
     );

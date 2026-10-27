@@ -1,6 +1,8 @@
 import { Type } from '@sinclair/typebox';
 import type { FastifyPluginAsync } from 'fastify';
 import { DatabaseUnavailableError, RateLimiterService } from '../limiter/rate-limiter-service.js';
+import { InvalidCostError } from '../limiter/types.js';
+import { checkAuthHook } from '../plugins/auth.js';
 import { hashClientKey, maskClientKey } from '../utils/hash.js';
 
 const CheckBodySchema = Type.Object(
@@ -29,6 +31,9 @@ export const checkRoutes: FastifyPluginAsync<{ limiterService: RateLimiterServic
 ) => {
   const limiter = opts.limiterService;
 
+  // Enforce service-to-service authentication for rate check evaluation
+  fastify.addHook('preHandler', checkAuthHook);
+
   fastify.post(
     '/v1/check',
     {
@@ -42,6 +47,16 @@ export const checkRoutes: FastifyPluginAsync<{ limiterService: RateLimiterServic
             remaining: Type.Number(),
             reset: Type.Number(),
             retryAfter: Type.Union([Type.Number(), Type.Null()]),
+          }),
+          400: Type.Object({
+            statusCode: Type.Literal(400),
+            error: Type.String(),
+            message: Type.String(),
+          }),
+          401: Type.Object({
+            statusCode: Type.Literal(401),
+            error: Type.String(),
+            message: Type.String(),
           }),
           503: Type.Object({
             statusCode: Type.Literal(503),
@@ -84,6 +99,22 @@ export const checkRoutes: FastifyPluginAsync<{ limiterService: RateLimiterServic
 
         return reply.status(200).send(result);
       } catch (err) {
+        if (err instanceof InvalidCostError) {
+          request.log.warn({
+            event: 'rate_check_invalid_cost',
+            maskedKey: maskClientKey(clientKey),
+            keyHash: hashClientKey(clientKey),
+            error: err.message,
+            cost,
+          });
+
+          return reply.status(400).send({
+            statusCode: 400,
+            error: 'Bad Request',
+            message: err.message,
+          });
+        }
+
         if (err instanceof DatabaseUnavailableError) {
           request.log.error({
             event: 'rate_limiter_storage_error',

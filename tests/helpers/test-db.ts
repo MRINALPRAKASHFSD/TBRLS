@@ -20,12 +20,14 @@ export async function cleanTestDatabase(): Promise<void> {
   const client = await testPool.connect();
   try {
     // Truncating client_policies cascades to token_bucket_states and sliding_window_requests
-    await client.query('TRUNCATE TABLE client_policies CASCADE;');
+    await client.query('TRUNCATE TABLE client_policies, rate_limit_metrics CASCADE;');
   } finally {
     client.release();
   }
 }
 
 export async function closeTestPool(): Promise<void> {
-  await testPool.end();
+  if (testPool && !testPool.ending && !testPool.ended) {
+    await testPool.end();
+  }
 }

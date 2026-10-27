@@ -1,4 +1,4 @@
-import type { RateCheckResult } from './types.js';
+import { InvalidCostError, type RateCheckResult } from './types.js';
 
 export interface TokenBucketCalculationState {
   currentTokens: number;
@@ -22,6 +22,15 @@ export function calculateTokenBucketCheck(
   result: RateCheckResult;
 } {
   const { currentTokens, lastRefillTimestampMs, capacity, refillRatePerSecond } = state;
+
+  if (cost > capacity) {
+    throw new InvalidCostError(
+      `Requested cost ${cost} exceeds client bucket capacity ${capacity}`,
+      capacity,
+      cost,
+      'TOKEN_BUCKET'
+    );
+  }
 
   // Calculate elapsed time in seconds since the last refill
   const elapsedMs = Math.max(0, nowMs - lastRefillTimestampMs);

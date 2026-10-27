@@ -180,4 +180,60 @@ export const adminRoutes: FastifyPluginAsync<{ limiterService: RateLimiterServic
       }
     }
   );
+
+  // GET /v1/admin/metrics
+  fastify.get(
+    '/v1/admin/metrics',
+    {
+      schema: {
+        querystring: Type.Object({
+          page: Type.Optional(Type.Integer({ minimum: 1, default: 1 })),
+          limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, default: 20 })),
+          clientKey: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+          from: Type.Optional(Type.String()),
+          to: Type.Optional(Type.String()),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const query = request.query as {
+        page?: number;
+        limit?: number;
+        clientKey?: string;
+        from?: string;
+        to?: string;
+      };
+
+      try {
+        const data = await limiter.getMetrics(query);
+        return reply.status(200).send(data);
+      } catch (err) {
+        if (err instanceof DatabaseUnavailableError) {
+          return reply.status(503).send({
+            statusCode: 503,
+            error: 'Service Unavailable',
+            message: 'Rate limiter storage service unavailable',
+          });
+        }
+        throw err;
+      }
+    }
+  );
+
+  // GET /v1/admin/metrics/summary
+  fastify.get('/v1/admin/metrics/summary', async (_request, reply) => {
+    try {
+      const summary = await limiter.getMetricsSummary();
+      return reply.status(200).send(summary);
+    } catch (err) {
+      if (err instanceof DatabaseUnavailableError) {
+        return reply.status(503).send({
+          statusCode: 503,
+          error: 'Service Unavailable',
+          message: 'Rate limiter storage service unavailable',
+        });
+      }
+      throw err;
+    }
+  });
 };

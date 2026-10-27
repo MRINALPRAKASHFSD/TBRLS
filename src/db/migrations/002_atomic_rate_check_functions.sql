@@ -197,13 +197,12 @@ BEGIN
             out_policy_type := 'SLIDING_WINDOW';
             out_limit := v_window_limit;
             out_remaining := 0;
-            out_reset := v_window_duration_seconds;
-
             IF v_oldest_req IS NOT NULL THEN
                 out_retry_after := GREATEST(1, CEIL(EXTRACT(EPOCH FROM ((v_oldest_req + (v_window_duration_seconds * INTERVAL '1 second')) - v_now))));
             ELSE
                 out_retry_after := v_window_duration_seconds;
             END IF;
+            out_reset := out_retry_after;
             RETURN NEXT;
             RETURN;
         END IF;

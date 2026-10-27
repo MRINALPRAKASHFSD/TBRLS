@@ -30,3 +30,4 @@ Located in [`docs/decisions/`](file:///Users/mrinalprakash/Desktop/TBRLS/docs/de
 - [ADR-0003: Token Bucket vs. Sliding Window Algorithms](file:///Users/mrinalprakash/Desktop/TBRLS/docs/decisions/ADR-0003-token-bucket-and-sliding-window.md)
 - [ADR-0004: Safe Logging & Secret Redaction Strategy](file:///Users/mrinalprakash/Desktop/TBRLS/docs/decisions/ADR-0004-safe-logging-and-secret-redaction.md)
 - [ADR-0005: Fail-Closed Posture on Database Outages](file:///Users/mrinalprakash/Desktop/TBRLS/docs/decisions/ADR-0005-fail-closed-error-posture.md)
+- [ADR-0006: Operational Storage Maintenance, Telemetry Metrics, and In-Memory Dashboard](file:///Users/mrinalprakash/Desktop/TBRLS/docs/decisions/ADR-0006-operational-storage-maintenance-and-telemetry-metrics.md)

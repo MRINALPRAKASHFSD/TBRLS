@@ -1,4 +1,4 @@
-import type { RateCheckResult } from './types.js';
+import { InvalidCostError, type RateCheckResult } from './types.js';
 
 export interface SlidingWindowCalculationState {
   timestampsMs: number[];
@@ -20,6 +20,16 @@ export function calculateSlidingWindowCheck(
   result: RateCheckResult;
 } {
   const { timestampsMs, limit, windowDurationSeconds } = state;
+
+  if (cost > limit) {
+    throw new InvalidCostError(
+      `Requested cost ${cost} exceeds client sliding window limit ${limit}`,
+      limit,
+      cost,
+      'SLIDING_WINDOW'
+    );
+  }
+
   const windowDurationMs = windowDurationSeconds * 1000;
   const cutoffMs = nowMs - windowDurationMs;
 
@@ -50,11 +60,15 @@ export function calculateSlidingWindowCheck(
     };
   } else {
     // Request denied
+    // Calculate how many existing requests must roll out before the new request can fit:
+    // (currentCount - m) + cost <= limit  =>  m >= currentCount + cost - limit
+    const neededExpirations = currentCount + cost - limit;
     let retryAfter = windowDurationSeconds;
-    if (activeTimestamps.length > 0) {
-      // Find the earliest timestamp in the active window
-      const oldestMs = Math.min(...activeTimestamps);
-      const msUntilExpiry = (oldestMs + windowDurationMs) - nowMs;
+
+    if (activeTimestamps.length >= neededExpirations && neededExpirations > 0) {
+      const sorted = [...activeTimestamps].sort((a, b) => a - b);
+      const requiredOldestMs = sorted[neededExpirations - 1];
+      const msUntilExpiry = (requiredOldestMs + windowDurationMs) - nowMs;
       retryAfter = Math.max(1, Math.ceil(msUntilExpiry / 1000));
     }
 
@@ -66,7 +80,7 @@ export function calculateSlidingWindowCheck(
         policyType: 'SLIDING_WINDOW',
         limit,
         remaining: 0,
-        reset: windowDurationSeconds,
+        reset: retryAfter,
         retryAfter,
       },
     };

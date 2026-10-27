@@ -40,6 +40,7 @@ describe('State Persistence & Restart Survivability (Integration Tests)', () => 
       const res = await app.inject({
         method: 'POST',
         url: '/v1/check',
+        headers: { 'X-Check-Key': config.checkApiKey },
         payload: { clientKey, cost: 1 },
       });
       expect(JSON.parse(res.payload).decision).toBe('ALLOW');
@@ -49,6 +50,7 @@ describe('State Persistence & Restart Survivability (Integration Tests)', () => 
     const beforeRestart = await app.inject({
       method: 'POST',
       url: '/v1/check',
+      headers: { 'X-Check-Key': config.checkApiKey },
       payload: { clientKey, cost: 1 },
     });
     expect(JSON.parse(beforeRestart.payload).remaining).toBe(5);
@@ -64,6 +66,7 @@ describe('State Persistence & Restart Survivability (Integration Tests)', () => 
     const afterRestart = await app.inject({
       method: 'POST',
       url: '/v1/check',
+      headers: { 'X-Check-Key': config.checkApiKey },
       payload: { clientKey, cost: 1 },
     });
 

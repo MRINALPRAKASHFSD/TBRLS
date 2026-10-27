@@ -59,12 +59,21 @@ TBRLS implements the **Exact Sliding Window Log** approach:
      - Decision = `ALLOW`
      - Record $t_{\text{now}}$ in log
      - $\text{Remaining} = L - (N + k)$
-     - $\text{Reset} = W$
+     - $\text{Reset} = W$ (seconds until the rolling window clears)
+     - $\text{RetryAfter} = \text{null}$
    - If $N + k > L$:
-     - Decision = `DENY`
-     - $\text{Remaining} = 0$
-     - Find the earliest active timestamp $t_{\text{oldest}}$ in the window.
-     - $\text{RetryAfter} = \lceil (t_{\text{oldest}} + W) - t_{\text{now}} \rceil$
+     - If $k > L$:
+       - Request can **never** fit within the window limit under any wait.
+       - The request is immediately rejected with an `InvalidCostError` (HTTP 400 Bad Request) before mutating state.
+       - No `Retry-After` header is returned.
+     - If $k \le L$ (Quota Exhaustion Denial):
+       - Decision = `DENY`
+       - $\text{Remaining} = 0$
+       - Calculate the number of requests that must expire for the new request of cost $k$ to fit:
+         $$m = N + k - L$$
+       - Locate the $m$-th oldest request timestamp $t_{m\text{-oldest}}$ in the active rolling window (sorted ascending by timestamp).
+       - $\text{RetryAfter} = \lceil (t_{m\text{-oldest}} + W) - t_{\text{now}} \rceil$ (minimum 1 second)
+       - $\text{Reset} = \text{RetryAfter}$ (seconds until enough oldest requests expire so that $k$ requests can fit, strictly matching `Retry-After`).
 
 ### 2.2 Exact vs. Approximate Comparison
 
@@ -72,18 +81,24 @@ TBRLS implements the **Exact Sliding Window Log** approach:
 | :--- | :--- | :--- |
 | **Accuracy** | Approximate (~95-99% accuracy; introduces boundary estimation errors) | **100% Exact** (Zero boundary errors) |
 | **Storage** | 2 counter rows per client | 1 row per active request within current window |
-| **Pruning** | Simple overwrite of prior window bucket | Atomic prune on each evaluation |
+| **Pruning** | Simple overwrite of prior window bucket | Atomic prune on each evaluation + background batch cleanup |
 | **Best Suited For** | Coarse, millions-of-requests-per-second scenarios | Strict rate limiting, financial APIs, API credit quotas |
 
 ---
 
 ## 3. Boundary & Edge Case Handling
 
-1. **Fractional Refill Precision**:
+1. **Impossible Cost Rejection ($k > C$ or $k > L$)**:
+   - If a caller requests `cost > capacity` (Token Bucket) or `cost > windowLimit` (Sliding Window), it can never succeed regardless of wait duration.
+   - The service rejects the request with **HTTP 400 Bad Request** before altering database state.
+   - It **does not** return a `Retry-After` header that would falsely imply the request could eventually succeed.
+2. **Multi-Expiration Expiry ($k > 1$) in Sliding Window**:
+   - When a multi-cost request is denied, finding only the single oldest request ($t_{\text{oldest}}$) is insufficient if multiple requests must expire before $N + k \le L$.
+   - The service computes $m = N + k - L$ and queries the $m$-th oldest request (`OFFSET (m - 1) LIMIT 1` in SQL), guaranteeing that once the client waits `Retry-After` seconds, the request is guaranteed to fit.
+3. **Fractional Refill Precision**:
    - Stored as `NUMERIC(14, 4)` in PostgreSQL, enabling accurate sub-second refills (e.g. 0.005 tokens over 5 milliseconds).
-2. **First-Time Client Initialization**:
+4. **First-Time Client Initialization**:
    - A brand new client starts with a full bucket ($T = C$) and immediate `ALLOW`.
-3. **Cost Exceeds Bucket Capacity**:
-   - If a client requests `cost > capacity` (e.g., cost 50 on a bucket of capacity 20), the check is immediately and safely `DENY`ed with `RetryAfter = null` (or maximum wait).
-4. **Zero Refill Time / Microbursts**:
+5. **Zero Refill Time / Microbursts**:
    - Consecutive calls arriving with $\Delta t = 0$ correctly deduct tokens without artificially adding zero-time refills.
+

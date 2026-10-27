@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { calculateTokenBucketCheck } from '../../src/limiter/token-bucket.js';
+import { InvalidCostError } from '../../src/limiter/types.js';
 
 describe('Token Bucket Algorithm Math (Unit Tests)', () => {
   const baseState = {
@@ -88,10 +89,10 @@ describe('Token Bucket Algorithm Math (Unit Tests)', () => {
     expect(step3.result.remaining).toBe(0);
   });
 
-  it('safely denies when requested cost exceeds capacity', () => {
-    const res = calculateTokenBucketCheck(baseState, 50, 1000000);
-    expect(res.allowed).toBe(false);
-    expect(res.result.decision).toBe('DENY');
-    expect(res.result.retryAfter).toBeGreaterThanOrEqual(1);
+  it('rejects requested cost larger than bucket capacity by throwing InvalidCostError', () => {
+    expect(() => calculateTokenBucketCheck(baseState, 50, 1000000)).toThrow(InvalidCostError);
+    expect(() => calculateTokenBucketCheck(baseState, 11, 1000000)).toThrow(
+      /Requested cost 11 exceeds client bucket capacity 10/
+    );
   });
 });

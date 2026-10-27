@@ -28,11 +28,12 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: 3000
       HOST: 0.0.0.0
       LOG_LEVEL: info
-      ADMIN_API_KEY: tbrls-admin-dev-secret-key-change-me
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-tbrls-admin-dev-secret-key-change-me}
+      CHECK_API_KEY: ${CHECK_API_KEY:-tbrls-check-dev-secret-key-change-me}
       DATABASE_URL: postgres://postgres:postgrespassword@postgres:5432/tbrls_db
       DATABASE_POOL_MIN: 2
       DATABASE_POOL_MAX: 20

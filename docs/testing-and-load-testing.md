@@ -57,42 +57,69 @@ To verify that concurrent checks cannot double-spend quota:
   - `http_req_failed` < 1% (excluding intentional rate limit `DENY` decisions, which are HTTP 200).
   - p95 latency < 50ms.
 
-### 4.2 Benchmark Results Log (Verified October 2026)
+### 4.2 Benchmark Results Log (Phase 3 Verified - October 2026)
 - **Tool Version**: k6 v2.3.0 (commit/devel, go1.27.1, darwin/arm64)
 - **Runtime**: Node.js v24.13.1 LTS
 - **Database**: PostgreSQL 16.15 (Homebrew)
 - **Target Rate**: 550.00 iterations/second
 - **Test Duration**: 20.0 seconds
-- **Total Requests Executed**: 11,001 iterations
-- **Actual Measured RPS**: **550.008 requests/second**
-- **HTTP Failure Rate (`http_req_failed`)**: **0.00%** (0 out of 11,001 requests failed)
+- **Authentication**: `X-Check-Key: tbrls-check-dev-secret-key-change-me`
+- **Total Requests Executed**: 11,000 iterations
+- **Actual Measured RPS**: **549.96 requests/second**
+- **HTTP Failure Rate (`http_req_failed`)**: **0.00%** (0 out of 11,000 requests failed)
 - **Rate Check Latency Profile**:
-  - Minimum: 0.275 ms (275 µs)
-  - Median: 0.541 ms (541 µs)
-  - Average: 0.806 ms (806 µs)
-  - **p90 Latency**: 0.840 ms (840 µs)
-  - **p95 Latency**: **1.11 ms** (Threshold `< 30ms`: PASSED)
-  - **p99 Latency**: **5.51 ms** (Threshold `< 60ms`: PASSED)
-  - Maximum: 66.08 ms
+  - Minimum: 0.256 ms (256 µs)
+  - Median: 0.552 ms (552 µs)
+  - Average: 0.922 ms (922 µs)
+  - **p90 Latency**: 0.877 ms (877 µs)
+  - **p95 Latency**: **1.15 ms** (Threshold `< 30ms`: PASSED)
+  - **p99 Latency**: **11.68 ms** (Threshold `< 60ms`: PASSED)
+  - Maximum: 60.78 ms
 - **Decision Outcomes**:
   - `ALLOW` decisions: 1,225 (61.2 req/s permitted)
-  - `DENY` decisions: 9,776 (488.8 req/s safely throttled)
-- **Checks Succeeded**: 44,004 / 44,004 (100.00%)
-  - `✓ status is 200`
-  - `✓ has ratelimit-limit header`
-  - `✓ has ratelimit-remaining header`
-  - `✓ has ratelimit-reset header`
+  - `DENY` decisions: 9,775 (488.7 req/s safely throttled)
+- **Checks Succeeded**: 66,000 / 66,000 (100.00%)
+  - `✓ status is 200` (11,000 / 11,000)
+  - `✓ has valid JSON body` (11,000 / 11,000)
+  - `✓ decision is exactly ALLOW or DENY` (11,000 / 11,000)
+  - `✓ has ratelimit-limit header` (11,000 / 11,000)
+  - `✓ has ratelimit-remaining header` (11,000 / 11,000)
+  - `✓ has ratelimit-reset header` (11,000 / 11,000)
+- **Atomic Telemetry Accuracy**:
+  - Verified via `GET /v1/admin/metrics/summary`: `totalRequests: 11000`, `totalAllowed: 1225`, `totalDenied: 9775`, `activeClientsCount: 25` (100% exact alignment).
 
 ---
 
-## 5. Vitest Suite Results (Verified)
-- **Total Test Files**: 6 passed (100%)
-- **Total Tests**: 27 passed (100%)
+## 5. Vitest Suite Results (Phase 4 Verified)
+- **Total Test Files**: 10 passed (100%)
+- **Total Tests**: 72 passed (100%)
+- **Execution Duration**: ~1.70s
 - **Suite Breakdown**:
-  - `tests/unit/token-bucket.test.ts`: 6 tests passed (fractional refills, burst capacity, deficit calculations)
-  - `tests/unit/sliding-window.test.ts`: 4 tests passed (window boundaries, timestamp pruning, retry-after)
+  - `tests/unit/logger.test.ts`: 11 tests passed (route template preference over raw URL paths, safe query parameter allowlist preserving `page` and `limit` while omitting `x-admin-key`, `access_token`, `password`, and arbitrary parameters, generic `<unmatched>` route placeholder for unrouted paths, header redaction, log stream capture verification in Fastify application)
+  - `tests/unit/token-bucket.test.ts`: 6 tests passed (fractional refills, burst capacity, deficit calculations, `InvalidCostError` on `cost > capacity` without state mutation)
+  - `tests/unit/sliding-window.test.ts`: 6 tests passed (window boundaries, timestamp pruning, `InvalidCostError` on `cost > limit`, multi-expiration `Retry-After` calculation)
   - `tests/unit/utils.test.ts`: 3 tests passed (key masking, SHA-256 key hashing, timing-safe matching)
-  - `tests/integration/api.test.ts`: 11 tests passed (health probes, headers, admin CRUD, input validation, fail-closed 503)
-  - `tests/integration/concurrency.test.ts`: 2 tests passed (zero double-spending under 50 concurrent checks, atomic first-time client initialization)
+  - `tests/unit/config.test.ts`: 9 tests passed (isPlaceholderKey, production missing/placeholder rejection, development/test defaults)
+  - `tests/unit/load-test-validation.test.ts`: 8 tests passed (missing CHECK_API_KEY rejection, response validation, HTTP status verification)
+  - `tests/integration/api.test.ts`: 24 tests passed (check service auth, impossible cost 400 rejection, multi-expiration sliding window check, admin CRUD, admin paginated metrics, metrics summary, live dashboard HTML & redirect, background pruning of sliding window & metrics, fail-closed 503)
+  - `tests/integration/multi-instance.test.ts`: 2 tests passed (in-process dual-instance test: two separate Fastify apps and independent connection pools in one process sharing configured `TEST_DATABASE_URL`; 50 concurrent checks with exact quota enforcement and zero double-spending)
+  - `tests/integration/concurrency.test.ts`: 2 tests passed (zero double-spending under 50 concurrent checks on single instance, atomic first-time client initialization)
   - `tests/integration/persistence.test.ts`: 1 test passed (state survived service restart)
+
+---
+
+## 6. Integration Teardown Resilience & Test Database Verification
+
+### Teardown Safety Hooks
+All integration suites (`tests/integration/api.test.ts`, `tests/integration/concurrency.test.ts`, and `tests/integration/multi-instance.test.ts`) guard `afterAll` teardowns against uninitialized Fastify instances and database pools:
+- Uses `if (app) await app.close()` and `if (pool) await pool.end()`.
+- [`closeTestPool()`](file:///Users/mrinalprakash/Desktop/TBRLS/tests/helpers/test-db.ts) checks `!testPool.ending && !testPool.ended` before terminating.
+- **Root Cause Preservation**: If database connectivity fails during `beforeAll` (e.g. database unreachable), Vitest reports the exact database connection error (`ECONNREFUSED`) directly without secondary `TypeError: Cannot read properties of undefined (reading 'close')` crashes masking the underlying problem.
+
+### Active Test Run Verification
+- **PostgreSQL Connectivity**: Actively verified connection to the configured `TEST_DATABASE_URL` via parameterized probe (`SELECT 1`).
+- **Executed & Passed**: All 10 test files and 72 tests passed without skips or suppressed failures in ~1.67s.
+
+
+
 
